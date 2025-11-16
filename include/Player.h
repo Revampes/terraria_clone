@@ -23,12 +23,11 @@ private:
     sf::RectangleShape shape;
     bool onGround;
     bool movingRight;
-    float lastDeltaTime;
     
     PlayerSkin skin;
     PlayerAnimation animation;
     
-    void handleInput();
+    void handleInput(float deltaTime);
     bool checkCollisions(const World& world);
 };
 

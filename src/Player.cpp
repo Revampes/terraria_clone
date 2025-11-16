@@ -9,7 +9,6 @@ Player::Player() {
     velocity = sf::Vector2f(0, 0);
     onGround = false;
     movingRight = true;
-    lastDeltaTime = 0.0f;
     
     // Initialize player skin with default values
     skin.hairType = 0;
@@ -21,46 +20,35 @@ Player::Player() {
 Player::~Player() {}
 
 void Player::update(const World& world, float deltaTime) {
-    lastDeltaTime = deltaTime;
-    handleInput();
+    handleInput(deltaTime);
     
     // Update animation state
     animation.grounded = onGround;
-    if (std::abs(velocity.x) > 0.1f && onGround) {
+    if (std::abs(velocity.x) > 5.0f && onGround) {
         animation.state = PlayerAnimation::running;
     } else {
         animation.state = PlayerAnimation::stay;
     }
-    animation.update(lastDeltaTime);
+    animation.update(deltaTime);
     
-    // Apply gravity only if not on ground
-    if (!onGround) {
-        velocity.y += PLAYER_GRAVITY;
-    } else {
-        // When on ground, zero out downward velocity
-        if (velocity.y > 0) {
-            velocity.y = 0;
-        }
-    }
+    velocity.y += PLAYER_GRAVITY * deltaTime;
     
-    // Clamp very small velocities to zero to prevent floating-point drift
-    if (std::abs(velocity.x) < 0.01f) velocity.x = 0;
-    if (std::abs(velocity.y) < 0.01f && onGround) velocity.y = 0;
-    
-    // Store old position for collision response
     sf::Vector2f oldPosition = position;
-    
-    // Update horizontal position
-    position.x += velocity.x;
+    bool groundState = onGround;
+    position.x += velocity.x * deltaTime;
     if (checkCollisions(world)) {
-        position.x = oldPosition.x; // Revert if collision
+        position.x = oldPosition.x;
         velocity.x = 0;
     }
+    onGround = groundState;
     
-    // Update vertical position
-    position.y += velocity.y;
+    oldPosition = position;
+    position.y += velocity.y * deltaTime;
     if (checkCollisions(world)) {
-        position.y = oldPosition.y; // Revert if collision
+        position.y = oldPosition.y;
+        if (velocity.y > 0) {
+            onGround = true;
+        }
         velocity.y = 0;
     }
     
@@ -86,21 +74,30 @@ void Player::setPosition(float x, float y) {
     shape.setPosition(position);
 }
 
-void Player::handleInput() {
-    // Horizontal movement
+void Player::handleInput(float deltaTime) {
+    float desiredDir = 0.0f;
     if (sf::Keyboard::isKeyPressed(sf::Keyboard::A)) {
-        velocity.x = -PLAYER_SPEED;
-        movingRight = false;
-    } else if (sf::Keyboard::isKeyPressed(sf::Keyboard::D)) {
-        velocity.x = PLAYER_SPEED;
-        movingRight = true;
-    } else {
-        velocity.x = 0;
+        desiredDir -= 1.0f;
     }
-    
-    // Jumping
+    if (sf::Keyboard::isKeyPressed(sf::Keyboard::D)) {
+        desiredDir += 1.0f;
+    }
+
+    if (desiredDir != 0.0f) {
+        velocity.x += desiredDir * PLAYER_ACCELERATION * deltaTime;
+        velocity.x = std::clamp(velocity.x, -PLAYER_MAX_SPEED, PLAYER_MAX_SPEED);
+        movingRight = velocity.x >= 0.0f;
+    } else {
+        float decel = onGround ? PLAYER_DECELERATION : PLAYER_AIR_DECELERATION;
+        if (velocity.x > 0.0f) {
+            velocity.x = std::max(0.0f, velocity.x - decel * deltaTime);
+        } else if (velocity.x < 0.0f) {
+            velocity.x = std::min(0.0f, velocity.x + decel * deltaTime);
+        }
+    }
+
     if (sf::Keyboard::isKeyPressed(sf::Keyboard::Space) && onGround) {
-        velocity.y = -PLAYER_JUMP_FORCE;
+        velocity.y = -PLAYER_JUMP_VELOCITY;
         onGround = false;
     }
 }

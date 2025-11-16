@@ -1,4 +1,5 @@
 #include "PlayerRenderer.h"
+#include <algorithm>
 #include <iostream>
 
 std::array<BodyPart, PlayerRenderer::BODY_PARTS_COUNT> PlayerRenderer::bodyParts = {{
@@ -44,94 +45,157 @@ void PlayerRenderer::loadAll() {
 
 void PlayerRenderer::render(sf::RenderWindow& window, sf::Vector2f pos, PlayerSkin& skin,
                             bool movingRight, PlayerAnimation& animation, float size) {
-    
-    // Player should be roughly 16 pixels wide and 27 pixels tall (1.7 blocks)
-    // Atlas images are 38x54, so we need to scale them down
+
+    // Target game hitbox is 16x32, sprite atlas is 38x54 per frame.
     float targetWidth = 16.0f * size;
     float targetHeight = 27.0f * size;
-    
-    // Adjust position: pos is the top-left corner of hitbox
-    // Center horizontally and align sprite so feet are at bottom of hitbox
-    pos.x += (16.0f - targetWidth) / 2.0f;  // Center horizontally in the 16-pixel hitbox
-    pos.y += 32.0f - targetHeight;  // Align feet to bottom of 32-pixel hitbox
-    
-    // Save original position before any animation offsets
+
+    // Align sprite with collision bounds (pos is top-left of hitbox).
+    pos.x += (16.0f - targetWidth) / 2.0f;
+    pos.y += 32.0f - targetHeight;
+
     sf::Vector2f basePos = pos;
-    sf::Vector2f headPos = pos;
-    
-    // if (animation.isFrameUp) {
-    //     headPos.y -= 1.0f * size; // Subtle head bob
-    // }
-    
-    auto drawPart = [&](int partIndex, int x, int y, sf::Color color, sf::Vector2f drawPos, bool flip = false) {
+    sf::Vector2f torsoPos = basePos;
+    sf::Vector2f headPos = basePos;
+
+    const float bobOffset = 2.0f * size;
+
+    auto wrapIndex = [](int index, int max) {
+        if (max <= 0) return 0;
+        int wrapped = index % max;
+        if (wrapped < 0) {
+            wrapped += max;
+        }
+        return wrapped;
+    };
+
+    auto drawPart = [&](int partIndex, int frameX, int frameY, const sf::Color& color, const sf::Vector2f& drawPos) {
         auto& part = bodyParts[partIndex];
-        sf::Sprite sprite;
-        sprite.setTexture(part.texture);
-        sprite.setTextureRect(part.getTextureCoords(x, y, !movingRight));
+        auto texSize = part.texture.getSize();
+        if (texSize.x == 0 || texSize.y == 0) {
+            return;
+        }
+
+        int atlasWidth = std::max(part.atlasSize.x, 1);
+        int atlasHeight = std::max(part.atlasSize.y, 1);
+        int columns = std::max(1, static_cast<int>(texSize.x) / atlasWidth);
+        int rows = std::max(1, static_cast<int>(texSize.y) / atlasHeight);
+        int clampedX = wrapIndex(frameX, columns);
+        int clampedY = wrapIndex(frameY, rows);
+
+        sf::Sprite sprite(part.texture);
+        sprite.setTextureRect(part.getTextureCoords(clampedX, clampedY, !movingRight));
         sprite.setPosition(drawPos);
-        // Scale to make the 38x54 atlas fit into 16x27 pixels
-        sprite.setScale(targetWidth / part.atlasSize.x, targetHeight / part.atlasSize.y);
+        sprite.setScale(targetWidth / static_cast<float>(atlasWidth),
+                        targetHeight / static_cast<float>(atlasHeight));
         sprite.setColor(color);
         window.draw(sprite);
     };
-    
-    auto drawHair = [&](int hairIndex, int x, int y, sf::Color color, sf::Vector2f drawPos) {
-        if (hairIndex < 0 || hairIndex >= 20) return;
+
+    auto drawHair = [&](int hairIndex, int frameX, int frameY, const sf::Color& color, const sf::Vector2f& drawPos) {
+        if (hairIndex < 0 || hairIndex >= static_cast<int>(hairSprites.size())) {
+            return;
+        }
+
         auto& hair = hairSprites[hairIndex];
-        sf::Sprite sprite;
-        sprite.setTexture(hair.texture);
-        sprite.setTextureRect(hair.getTextureCoords(x, y, !movingRight));
+        auto texSize = hair.texture.getSize();
+        if (texSize.x == 0 || texSize.y == 0) {
+            return;
+        }
+
+        int blockWidth = std::max(hair.blockSize.x, 1);
+        int blockHeight = std::max(hair.blockSize.y, 1);
+        int columns = std::max(1, static_cast<int>(texSize.x) / blockWidth);
+        int rows = std::max(1, static_cast<int>(texSize.y) / blockHeight);
+        int clampedX = wrapIndex(frameX, columns);
+        int clampedY = wrapIndex(frameY, rows);
+
+        sf::Sprite sprite(hair.texture);
+        sprite.setTextureRect(hair.getTextureCoords(clampedX, clampedY, !movingRight));
         sprite.setPosition(drawPos);
-        // Scale to make the 38x54 atlas fit into 16x27 pixels
-        sprite.setScale(targetWidth / hair.blockSize.x, targetHeight / hair.blockSize.y);
+        sprite.setScale(targetWidth / static_cast<float>(blockWidth),
+                        targetHeight / static_cast<float>(blockHeight));
         sprite.setColor(color);
         window.draw(sprite);
     };
 
-    int frame = (animation.state == PlayerAnimation::running) ? animation.headFrame : 0;
+    int headFrame = animation.headFrame;
+    int hairFrame = animation.hairFrame;
 
-    // Draw legs first
-    if (skin.hasPants) {
-        drawPart(pants, frame, 0, skin.pantsColor, basePos);
-    } else {
-        drawPart(legs, frame, 0, skin.skinColor, basePos);
+    // Head
+    drawPart(head, 0, headFrame, skin.skinColor, headPos);
+    drawPart(eyeWhite, 0, headFrame, sf::Color::White, headPos);
+    drawPart(eye, 0, headFrame, skin.eyeColor, headPos);
+    drawHair(std::clamp(skin.hairType, 0, static_cast<int>(hairSprites.size()) - 1), 0, hairFrame, skin.hairColor, headPos);
+
+    if (animation.isFrameUp) {
+        torsoPos.y -= bobOffset;
     }
 
-    // Draw body and arms
+    if (animation.grounded) {
+        drawPart(rightArm, animation.handFrameX, 2, skin.skinColor, torsoPos);
+    } else {
+        drawPart(rightArm, 2, 3, skin.skinColor, torsoPos);
+    }
+
     if (skin.hasClothes) {
-        drawPart(clothes, 0, 0, skin.clothesColor, basePos); // Shirt
-        drawPart(rightArm, frame, 0, skin.clothesColor, basePos); // Arms with shirt color
+        drawPart(clothes, 0, 0, skin.clothesColor, torsoPos);
+
+        if (animation.grounded) {
+            drawPart(rightArm, animation.handFrameX, animation.handFrameY, skin.skinColor, torsoPos);
+            drawPart(clothes, 0, 3, skin.clothesColor, torsoPos);
+        } else {
+            drawPart(rightArm, 2, 1, skin.skinColor, torsoPos);
+        }
     } else {
-        drawPart(torso, 0, 0, skin.skinColor, basePos); // Bare chest
-        drawPart(rightArm, frame, 0, skin.skinColor, basePos); // Bare arms
+        drawPart(torso, 0, 0, skin.skinColor, torsoPos);
+
+        if (animation.grounded) {
+            drawPart(rightArm, animation.handFrameX, animation.handFrameY, skin.skinColor, torsoPos);
+        } else {
+            drawPart(rightArm, 2, 1, skin.skinColor, torsoPos);
+        }
     }
 
-    // Draw head on top
-    drawPart(head, 0, 0, skin.skinColor, headPos);
-    drawPart(eyeWhite, 0, 0, sf::Color::White, headPos);
-    drawPart(eye, 0, 0, skin.eyeColor, headPos);
-    drawHair(skin.hairType, 0, 0, skin.hairColor, headPos);
+    if (skin.hasPants) {
+        drawPart(pants, 0, headFrame, skin.pantsColor, basePos);
+    } else {
+        drawPart(legs, 0, headFrame, skin.skinColor, basePos);
+    }
 }
 
 void PlayerAnimation::update(float deltaTime) {
     if (state == stay) {
-        timer = 0.0f;
-        headFrame = 0;
-        isFrameUp = false;
+        bool grounded_ = grounded;
+        *this = PlayerAnimation{};
+        grounded = grounded_;
     } else if (state == running) {
         float runSpeed = 0.08f;
-        
+
         timer += deltaTime;
-        
+
+        if (headFrame >= 6) {
+            headFrame -= 6;
+        }
+
         while (timer >= runSpeed) {
             timer -= runSpeed;
-            headFrame = (headFrame + 1) % 14;
+            headFrame++;
         }
-        
+
+        headFrame %= 14;
+                
         if ((headFrame >= 1 && headFrame <= 3) || (headFrame >= 8 && headFrame <= 10)) {
             isFrameUp = true;
         } else {
             isFrameUp = false;
         }
+
+        hairFrame = headFrame;
+
+        handFrameX = (headFrame / 2) % 4 + 3;
+        handFrameY = 1;
+
+        headFrame += 6;
     }
 }

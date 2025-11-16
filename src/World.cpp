@@ -2,7 +2,9 @@
 #include <algorithm>
 #include <cmath>
 
-World::World() {
+World::World()
+        : rng(std::random_device{}()),
+            treeHeightDistribution(4, 10) {
     // Initialize Perlin noise with a seed
     perlin = PerlinNoise(12345);
     
@@ -58,6 +60,7 @@ void World::generateChunk(int chunkX, int chunkY) {
             tile.type = 0;
             tile.solid = false;
             tile.visible = false;
+            tile.fogEnabled = true;
             
             // Generate terrain using Perlin noise
             float noiseValue = perlin.octaveNoise(worldX * NOISE_SCALE, worldY * NOISE_SCALE, OCTAVES, PERSISTENCE, LACUNARITY);
@@ -72,7 +75,6 @@ void World::generateChunk(int chunkX, int chunkY) {
                     // Deep underground - stone and ores
                     tile.type = 3; // Stone
                     tile.solid = true;
-                    tile.visible = true;
                     
                     // Generate ores (made less rare)
                     float oreNoise = perlin.octaveNoise(worldX * 0.1f, worldY * 0.1f, 2, 0.5f, 2.0f);
@@ -96,13 +98,11 @@ void World::generateChunk(int chunkX, int chunkY) {
                 } else {
                     tile.type = 1; // Dirt
                     tile.solid = true;
-                    tile.visible = true;
                 }
             } else if (worldY == surfaceHeight) {
                 // Surface layer - grass (only one layer)
                 tile.type = 2; // Grass
                 tile.solid = true;
-                tile.visible = true;
             } else {
                 tile.type = 0; // Air
                 tile.solid = false;
@@ -121,11 +121,12 @@ void World::generateChunk(int chunkX, int chunkY) {
         }
     }
     
-    // Update chunk vertices for rendering
-    updateChunkVertices(chunk);
-    
-    // Add chunk to the list
+    // Store chunk, then compute visibility and vertices
     chunks.push_back(chunk);
+    Chunk& storedChunk = chunks.back();
+    recalcChunkVisibility(storedChunk);
+    updateChunkVertices(storedChunk);
+    refreshNeighborChunks(storedChunk);
 }
 
 void World::generateTrees(int chunkX, int chunkY) {
@@ -148,14 +149,15 @@ void World::generateTrees(int chunkX, int chunkY) {
                 
                 if (currentTile.type == 2 && aboveTile.type == 0) {
                     // Found surface! Place a tree
-                    int treeHeight = 6;
+                    int treeHeight = treeHeightDistribution(rng);
                     
                     // Place trunk
                     for (int h = 1; h <= treeHeight; ++h) {
                         Tile woodTile;
                         woodTile.type = 8; // Wood
                         woodTile.solid = false; // Non-solid so player can walk through
-                        woodTile.visible = true;
+                        woodTile.visible = false;
+                        woodTile.fogEnabled = false;
                         setTile(worldX, worldY - h, woodTile);
                     }
                     
@@ -173,7 +175,8 @@ void World::generateTrees(int chunkX, int chunkY) {
                                 Tile leafTile;
                                 leafTile.type = 9; // Leaves
                                 leafTile.solid = false; // Non-solid so player can walk through
-                                leafTile.visible = true;
+                                leafTile.visible = false;
+                                leafTile.fogEnabled = false;
                                 setTile(worldX + lx, leafY + ly, leafTile);
                             }
                         }
@@ -204,87 +207,102 @@ void World::draw(sf::RenderWindow& window, const sf::Vector2f& playerPosition) {
             sf::VertexArray dirtVertices(sf::Quads);
             sf::VertexArray stoneVertices(sf::Quads);
             sf::VertexArray otherVertices(sf::Quads);
+            sf::VertexArray hiddenVertices(sf::Quads);
             
             // Go through each tile and add to appropriate vertex array
             for (int y = 0; y < CHUNK_HEIGHT; ++y) {
                 for (int x = 0; x < CHUNK_WIDTH; ++x) {
+                    int worldX = chunk.x * CHUNK_WIDTH + x;
+                    int worldY = chunk.y * CHUNK_HEIGHT + y;
                     Tile tile = chunk.tiles[x][y];
-                    
-                    if (tile.visible) {
-                        sf::Vertex quad[4];
-                        quad[0].position = sf::Vector2f(x * TILE_SIZE, y * TILE_SIZE) + chunkPosition;
-                        quad[1].position = sf::Vector2f((x + 1) * TILE_SIZE, y * TILE_SIZE) + chunkPosition;
-                        quad[2].position = sf::Vector2f((x + 1) * TILE_SIZE, (y + 1) * TILE_SIZE) + chunkPosition;
-                        quad[3].position = sf::Vector2f(x * TILE_SIZE, (y + 1) * TILE_SIZE) + chunkPosition;
-                        
-                        // Use first tile from atlas with small inset to avoid transparent borders
-                        quad[0].texCoords = sf::Vector2f(0.5f, 0.5f);
-                        quad[1].texCoords = sf::Vector2f(15.5f, 0.5f);
-                        quad[2].texCoords = sf::Vector2f(15.5f, 15.5f);
-                        quad[3].texCoords = sf::Vector2f(0.5f, 15.5f);
-                        
-                        quad[0].color = sf::Color::White;
-                        quad[1].color = sf::Color::White;
-                        quad[2].color = sf::Color::White;
-                        quad[3].color = sf::Color::White;
-                        
-                        if (tile.type == 1) {
-                            // Dirt - use dirt texture atlas
-                            dirtVertices.append(quad[0]);
-                            dirtVertices.append(quad[1]);
-                            dirtVertices.append(quad[2]);
-                            dirtVertices.append(quad[3]);
-                        } else if (tile.type == 3) {
-                            // Stone - use stone texture atlas
-                            stoneVertices.append(quad[0]);
-                            stoneVertices.append(quad[1]);
-                            stoneVertices.append(quad[2]);
-                            stoneVertices.append(quad[3]);
-                        } else {
-                            // Other tiles - use color
-                            if (tile.type == 2) {
-                                quad[0].color = sf::Color(34, 139, 34);
-                                quad[1].color = sf::Color(34, 139, 34);
-                                quad[2].color = sf::Color(34, 139, 34);
-                                quad[3].color = sf::Color(34, 139, 34);
-                            } else if (tile.type == 4) {
-                                quad[0].color = sf::Color(50, 50, 50);
-                                quad[1].color = sf::Color(50, 50, 50);
-                                quad[2].color = sf::Color(50, 50, 50);
-                                quad[3].color = sf::Color(50, 50, 50);
-                            } else if (tile.type == 5) {
-                                quad[0].color = sf::Color(205, 127, 50);
-                                quad[1].color = sf::Color(205, 127, 50);
-                                quad[2].color = sf::Color(205, 127, 50);
-                                quad[3].color = sf::Color(205, 127, 50);
-                            } else if (tile.type == 6) {
-                                quad[0].color = sf::Color(255, 215, 0);
-                                quad[1].color = sf::Color(255, 215, 0);
-                                quad[2].color = sf::Color(255, 215, 0);
-                                quad[3].color = sf::Color(255, 215, 0);
-                            } else if (tile.type == 7) {
-                                quad[0].color = sf::Color(0, 191, 255);
-                                quad[1].color = sf::Color(0, 191, 255);
-                                quad[2].color = sf::Color(0, 191, 255);
-                                quad[3].color = sf::Color(0, 191, 255);
-                            } else if (tile.type == 8) {
-                                // Wood - brown
-                                quad[0].color = sf::Color(139, 69, 19);
-                                quad[1].color = sf::Color(139, 69, 19);
-                                quad[2].color = sf::Color(139, 69, 19);
-                                quad[3].color = sf::Color(139, 69, 19);
-                            } else if (tile.type == 9) {
-                                // Leaves - dark green
-                                quad[0].color = sf::Color(34, 139, 34, 180);
-                                quad[1].color = sf::Color(34, 139, 34, 180);
-                                quad[2].color = sf::Color(34, 139, 34, 180);
-                                quad[3].color = sf::Color(34, 139, 34, 180);
-                            }
-                            otherVertices.append(quad[0]);
-                            otherVertices.append(quad[1]);
-                            otherVertices.append(quad[2]);
-                            otherVertices.append(quad[3]);
+
+                    if (tile.type == 0) {
+                        continue;
+                    }
+
+                    sf::Vertex quad[4];
+                    quad[0].position = sf::Vector2f(x * TILE_SIZE, y * TILE_SIZE) + chunkPosition;
+                    quad[1].position = sf::Vector2f((x + 1) * TILE_SIZE, y * TILE_SIZE) + chunkPosition;
+                    quad[2].position = sf::Vector2f((x + 1) * TILE_SIZE, (y + 1) * TILE_SIZE) + chunkPosition;
+                    quad[3].position = sf::Vector2f(x * TILE_SIZE, (y + 1) * TILE_SIZE) + chunkPosition;
+
+                    if (!tile.visible && tile.fogEnabled) {
+                        sf::Color fogShade(0, 0, 0, 235);
+                        quad[0].color = fogShade;
+                        quad[1].color = fogShade;
+                        quad[2].color = fogShade;
+                        quad[3].color = fogShade;
+                        hiddenVertices.append(quad[0]);
+                        hiddenVertices.append(quad[1]);
+                        hiddenVertices.append(quad[2]);
+                        hiddenVertices.append(quad[3]);
+                        continue;
+                    } else if (!tile.visible) {
+                        continue;
+                    }
+
+                    // Use first tile from atlas with small inset to avoid transparent borders
+                    quad[0].texCoords = sf::Vector2f(0.5f, 0.5f);
+                    quad[1].texCoords = sf::Vector2f(15.5f, 0.5f);
+                    quad[2].texCoords = sf::Vector2f(15.5f, 15.5f);
+                    quad[3].texCoords = sf::Vector2f(0.5f, 15.5f);
+
+                    quad[0].color = sf::Color::White;
+                    quad[1].color = sf::Color::White;
+                    quad[2].color = sf::Color::White;
+                    quad[3].color = sf::Color::White;
+
+                    if (tile.type == 1) {
+                        dirtVertices.append(quad[0]);
+                        dirtVertices.append(quad[1]);
+                        dirtVertices.append(quad[2]);
+                        dirtVertices.append(quad[3]);
+                    } else if (tile.type == 3) {
+                        stoneVertices.append(quad[0]);
+                        stoneVertices.append(quad[1]);
+                        stoneVertices.append(quad[2]);
+                        stoneVertices.append(quad[3]);
+                    } else {
+                        if (tile.type == 2) {
+                            quad[0].color = sf::Color(34, 139, 34);
+                            quad[1].color = sf::Color(34, 139, 34);
+                            quad[2].color = sf::Color(34, 139, 34);
+                            quad[3].color = sf::Color(34, 139, 34);
+                        } else if (tile.type == 4) {
+                            quad[0].color = sf::Color(50, 50, 50);
+                            quad[1].color = sf::Color(50, 50, 50);
+                            quad[2].color = sf::Color(50, 50, 50);
+                            quad[3].color = sf::Color(50, 50, 50);
+                        } else if (tile.type == 5) {
+                            quad[0].color = sf::Color(205, 127, 50);
+                            quad[1].color = sf::Color(205, 127, 50);
+                            quad[2].color = sf::Color(205, 127, 50);
+                            quad[3].color = sf::Color(205, 127, 50);
+                        } else if (tile.type == 6) {
+                            quad[0].color = sf::Color(255, 215, 0);
+                            quad[1].color = sf::Color(255, 215, 0);
+                            quad[2].color = sf::Color(255, 215, 0);
+                            quad[3].color = sf::Color(255, 215, 0);
+                        } else if (tile.type == 7) {
+                            quad[0].color = sf::Color(0, 191, 255);
+                            quad[1].color = sf::Color(0, 191, 255);
+                            quad[2].color = sf::Color(0, 191, 255);
+                            quad[3].color = sf::Color(0, 191, 255);
+                        } else if (tile.type == 8) {
+                            quad[0].color = sf::Color(139, 69, 19);
+                            quad[1].color = sf::Color(139, 69, 19);
+                            quad[2].color = sf::Color(139, 69, 19);
+                            quad[3].color = sf::Color(139, 69, 19);
+                        } else if (tile.type == 9) {
+                            quad[0].color = sf::Color(34, 139, 34, 180);
+                            quad[1].color = sf::Color(34, 139, 34, 180);
+                            quad[2].color = sf::Color(34, 139, 34, 180);
+                            quad[3].color = sf::Color(34, 139, 34, 180);
                         }
+                        otherVertices.append(quad[0]);
+                        otherVertices.append(quad[1]);
+                        otherVertices.append(quad[2]);
+                        otherVertices.append(quad[3]);
                     }
                 }
             }
@@ -299,20 +317,16 @@ void World::draw(sf::RenderWindow& window, const sf::Vector2f& playerPosition) {
             if (otherVertices.getVertexCount() > 0) {
                 window.draw(otherVertices);
             }
+            if (hiddenVertices.getVertexCount() > 0) {
+                window.draw(hiddenVertices);
+            }
         }
     }
 }
 
 Tile World::getTile(int x, int y) const {
-    // Find the chunk containing the tile
-    int chunkX = x / CHUNK_WIDTH;
-    int chunkY = y / CHUNK_HEIGHT;
-    
-    // Handle negative coordinates properly for modulo
-    int tileX = x % CHUNK_WIDTH;
-    int tileY = y % CHUNK_HEIGHT;
-    if (tileX < 0) { tileX += CHUNK_WIDTH; chunkX--; }
-    if (tileY < 0) { tileY += CHUNK_HEIGHT; chunkY--; }
+    int chunkX, chunkY, tileX, tileY;
+    computeChunkCoords(x, y, chunkX, chunkY, tileX, tileY);
     
     for (const Chunk& chunk : chunks) {
         if (chunk.x == chunkX && chunk.y == chunkY) {
@@ -329,23 +343,15 @@ Tile World::getTile(int x, int y) const {
 }
 
 void World::setTile(int x, int y, Tile tile) {
-    // Find the chunk containing the tile
-    int chunkX = x / CHUNK_WIDTH;
-    int chunkY = y / CHUNK_HEIGHT;
-    
-    // Handle negative coordinates properly for modulo
-    int tileX = x % CHUNK_WIDTH;
-    int tileY = y % CHUNK_HEIGHT;
-    if (tileX < 0) { tileX += CHUNK_WIDTH; chunkX--; }
-    if (tileY < 0) { tileY += CHUNK_HEIGHT; chunkY--; }
-    
-    for (Chunk& chunk : chunks) {
-        if (chunk.x == chunkX && chunk.y == chunkY) {
-            chunk.tiles[tileX][tileY] = tile;
-            updateChunkVertices(chunk);
-            return;
-        }
+    Chunk* chunk = nullptr;
+    int tileX = 0;
+    int tileY = 0;
+    if (!locateTileMutable(x, y, chunk, tileX, tileY) || chunk == nullptr) {
+        return;
     }
+
+    chunk->tiles[tileX][tileY] = tile;
+    refreshVisibilityAround(x, y);
 }
 
 Chunk* World::getChunk(int x, int y) {
@@ -478,6 +484,108 @@ void World::updateChunkVertices(Chunk& chunk) {
                 quad[2].color = sf::Color::Transparent;
                 quad[3].color = sf::Color::Transparent;
             }
+        }
+    }
+}
+
+void World::computeChunkCoords(int worldX, int worldY, int& chunkX, int& chunkY, int& tileX, int& tileY) {
+    chunkX = worldX / CHUNK_WIDTH;
+    chunkY = worldY / CHUNK_HEIGHT;
+    tileX = worldX % CHUNK_WIDTH;
+    tileY = worldY % CHUNK_HEIGHT;
+    if (tileX < 0) {
+        tileX += CHUNK_WIDTH;
+        --chunkX;
+    }
+    if (tileY < 0) {
+        tileY += CHUNK_HEIGHT;
+        --chunkY;
+    }
+}
+
+bool World::locateTileMutable(int worldX, int worldY, Chunk*& chunkOut, int& tileX, int& tileY) {
+    int chunkX = 0;
+    int chunkY = 0;
+    computeChunkCoords(worldX, worldY, chunkX, chunkY, tileX, tileY);
+    chunkOut = getChunk(chunkX, chunkY);
+    return chunkOut != nullptr;
+}
+
+bool World::isAirTile(int worldX, int worldY) const {
+    return getTile(worldX, worldY).type == 0;
+}
+
+bool World::shouldTileBeVisible(int worldX, int worldY, const Tile& tile) const {
+    if (!tile.fogEnabled) {
+        return true;
+    }
+
+    if (tile.type == 0) {
+        return false;
+    }
+
+    static const int offsets[4][2] = {{0, -1}, {0, 1}, {-1, 0}, {1, 0}};
+    for (const auto& offset : offsets) {
+        if (isAirTile(worldX + offset[0], worldY + offset[1])) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void World::recalcChunkVisibility(Chunk& chunk) {
+    for (int y = 0; y < CHUNK_HEIGHT; ++y) {
+        for (int x = 0; x < CHUNK_WIDTH; ++x) {
+            int worldX = chunk.x * CHUNK_WIDTH + x;
+            int worldY = chunk.y * CHUNK_HEIGHT + y;
+            Tile& tile = chunk.tiles[x][y];
+            tile.visible = shouldTileBeVisible(worldX, worldY, tile);
+        }
+    }
+}
+
+void World::refreshVisibilityAround(int worldX, int worldY) {
+    static const int offsets[5][2] = {{0, 0}, {0, -1}, {0, 1}, {-1, 0}, {1, 0}};
+    std::vector<Chunk*> dirtyChunks;
+    dirtyChunks.reserve(5);
+
+    for (const auto& offset : offsets) {
+        int nx = worldX + offset[0];
+        int ny = worldY + offset[1];
+        Chunk* chunk = nullptr;
+        int tileX = 0;
+        int tileY = 0;
+        if (!locateTileMutable(nx, ny, chunk, tileX, tileY) || chunk == nullptr) {
+            continue;
+        }
+
+        Tile& tile = chunk->tiles[tileX][tileY];
+        tile.visible = shouldTileBeVisible(nx, ny, tile);
+
+        if (std::find(dirtyChunks.begin(), dirtyChunks.end(), chunk) == dirtyChunks.end()) {
+            dirtyChunks.push_back(chunk);
+        }
+    }
+
+    for (Chunk* chunk : dirtyChunks) {
+        updateChunkVertices(*chunk);
+    }
+}
+
+void World::refreshNeighborChunks(const Chunk& chunk) {
+    for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            if (dx == 0 && dy == 0) {
+                continue;
+            }
+
+            Chunk* neighbor = getChunk(chunk.x + dx, chunk.y + dy);
+            if (!neighbor) {
+                continue;
+            }
+
+            recalcChunkVisibility(*neighbor);
+            updateChunkVertices(*neighbor);
         }
     }
 }

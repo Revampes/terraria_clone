@@ -243,7 +243,6 @@ CMakeFiles/terraria_clone.dir/src/Player.cpp.obj: \
  C:/msys64/ucrt64/include/SFML/Graphics/Text.hpp \
  C:/msys64/ucrt64/include/SFML/Graphics/VertexBuffer.hpp \
  C:/Users/user/Downloads/terraria_clone/include/World.h \
- C:/Users/user/Downloads/terraria_clone/include/PerlinNoise.h \
  C:/msys64/ucrt64/include/c++/14.2.0/random \
  C:/msys64/ucrt64/include/c++/14.2.0/cmath \
  C:/msys64/ucrt64/include/math.h \
@@ -273,6 +272,7 @@ CMakeFiles/terraria_clone.dir/src/Player.cpp.obj: \
  C:/msys64/ucrt64/include/c++/14.2.0/numeric \
  C:/msys64/ucrt64/include/c++/14.2.0/bits/stl_numeric.h \
  C:/msys64/ucrt64/include/c++/14.2.0/pstl/glue_numeric_defs.h \
+ C:/Users/user/Downloads/terraria_clone/include/PerlinNoise.h \
  C:/Users/user/Downloads/terraria_clone/include/Constants.h \
  C:/Users/user/Downloads/terraria_clone/include/PlayerRenderer.h \
  C:/msys64/ucrt64/include/c++/14.2.0/array \

@@ -19,10 +19,13 @@ constexpr int CHUNK_WIDTH = 32;
 constexpr int CHUNK_HEIGHT = 32;
 constexpr int CHUNKS_RENDERED = 10;
 
-// Player constants
-constexpr float PLAYER_SPEED = 3.0f;
-constexpr float PLAYER_JUMP_FORCE = 7.0f;
-constexpr float PLAYER_GRAVITY = 0.2f;
+// Player constants (per-second units)
+constexpr float PLAYER_MAX_SPEED = 180.0f;
+constexpr float PLAYER_ACCELERATION = 900.0f;
+constexpr float PLAYER_DECELERATION = 900.0f;
+constexpr float PLAYER_AIR_DECELERATION = 400.0f;
+constexpr float PLAYER_JUMP_VELOCITY = 320.0f;
+constexpr float PLAYER_GRAVITY = 900.0f;
 constexpr int PLAYER_WIDTH = 16;
 constexpr int PLAYER_HEIGHT = 32;
 
