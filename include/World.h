@@ -26,6 +26,7 @@ public:
     
     void generateWorld();
     void generateChunk(int chunkX, int chunkY);
+    void generateTrees(int chunkX, int chunkY);
     void draw(sf::RenderWindow& window, const sf::Vector2f& playerPosition);
     void updateChunks(int playerChunkX, int playerChunkY);
     

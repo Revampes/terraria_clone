@@ -54,9 +54,8 @@ void Game::update(float deltaTime) {
     player.update(world, deltaTime);
     
     // Update camera to follow player (keep player centered)
-    // Round to nearest pixel to prevent camera jitter/shaking
-    float centerX = std::round(player.getPosition().x + PLAYER_WIDTH / 2);
-    float centerY = std::round(player.getPosition().y + PLAYER_HEIGHT / 2);
+    float centerX = player.getPosition().x + PLAYER_WIDTH / 2;
+    float centerY = player.getPosition().y + PLAYER_HEIGHT / 2;
     camera.setCenter(centerX, centerY);
     
     // Generate chunks around player as they move

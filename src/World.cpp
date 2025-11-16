@@ -9,9 +9,15 @@ World::World() {
     // Load textures
     if (!dirtTexture.loadFromFile("resources/Tiles_0.png")) {
         // Handle error - texture not loaded
+    } else {
+        dirtTexture.setSmooth(false); // Disable smoothing for pixel-perfect rendering
+        dirtTexture.setRepeated(true);
     }
     if (!stoneTexture.loadFromFile("resources/Tiles_1.png")) {
         // Handle error - texture not loaded
+    } else {
+        stoneTexture.setSmooth(false); // Disable smoothing for pixel-perfect rendering
+        stoneTexture.setRepeated(true);
     }
     
     // Generate initial world
@@ -25,6 +31,13 @@ void World::generateWorld() {
     for (int y = -CHUNKS_RENDERED / 2; y < CHUNKS_RENDERED / 2; ++y) {
         for (int x = -CHUNKS_RENDERED / 2; x < CHUNKS_RENDERED / 2; ++x) {
             generateChunk(x, y);
+        }
+    }
+    
+    // Generate trees after all initial terrain is created
+    for (int y = -CHUNKS_RENDERED / 2; y < CHUNKS_RENDERED / 2; ++y) {
+        for (int x = -CHUNKS_RENDERED / 2; x < CHUNKS_RENDERED / 2; ++x) {
+            generateTrees(x, y);
         }
     }
 }
@@ -49,10 +62,14 @@ void World::generateChunk(int chunkX, int chunkY) {
             // Generate terrain using Perlin noise
             float noiseValue = perlin.octaveNoise(worldX * NOISE_SCALE, worldY * NOISE_SCALE, OCTAVES, PERSISTENCE, LACUNARITY);
             
+            // Calculate surface height
+            int surfaceHeight = static_cast<int>(30 + noiseValue * 10);
+            
             // Determine tile type based on noise value and height
-            if (worldY > 30 + noiseValue * 10) {
-                // Deep underground - stone and ores
-                if (worldY > 35 + noiseValue * 10) {
+            if (worldY > surfaceHeight) {
+                // Underground - dirt then stone
+                if (worldY > surfaceHeight + 5) {
+                    // Deep underground - stone and ores
                     tile.type = 3; // Stone
                     tile.solid = true;
                     tile.visible = true;
@@ -81,7 +98,8 @@ void World::generateChunk(int chunkX, int chunkY) {
                     tile.solid = true;
                     tile.visible = true;
                 }
-            } else if (worldY > 25 + noiseValue * 10) {
+            } else if (worldY == surfaceHeight) {
+                // Surface layer - grass (only one layer)
                 tile.type = 2; // Grass
                 tile.solid = true;
                 tile.visible = true;
@@ -108,6 +126,64 @@ void World::generateChunk(int chunkX, int chunkY) {
     
     // Add chunk to the list
     chunks.push_back(chunk);
+}
+
+void World::generateTrees(int chunkX, int chunkY) {
+    // Generate trees after terrain is created
+    // Only generate trees for chunks near surface (y <= 2)
+    if (chunkY > 2) return;
+    
+    for (int x = 0; x < CHUNK_WIDTH; ++x) {
+        int worldX = chunkX * CHUNK_WIDTH + x;
+        
+        // Use simple spacing - tree every 8-12 blocks
+        if (worldX % 10 == 0) {
+            // Find the surface by scanning downward from top of this chunk
+            for (int y = 0; y < CHUNK_HEIGHT; ++y) {
+                int worldY = chunkY * CHUNK_HEIGHT + y;
+                
+                // Look for grass blocks with air above
+                Tile currentTile = getTile(worldX, worldY);
+                Tile aboveTile = getTile(worldX, worldY - 1);
+                
+                if (currentTile.type == 2 && aboveTile.type == 0) {
+                    // Found surface! Place a tree
+                    int treeHeight = 6;
+                    
+                    // Place trunk
+                    for (int h = 1; h <= treeHeight; ++h) {
+                        Tile woodTile;
+                        woodTile.type = 8; // Wood
+                        woodTile.solid = false; // Non-solid so player can walk through
+                        woodTile.visible = true;
+                        setTile(worldX, worldY - h, woodTile);
+                    }
+                    
+                    // Generate leaves in a simple pattern
+                    int leafY = worldY - treeHeight;
+                    for (int ly = -2; ly <= 1; ++ly) {
+                        for (int lx = -2; lx <= 2; ++lx) {
+                            // Skip corners
+                            if (std::abs(lx) == 2 && std::abs(ly) == 2) continue;
+                            // Skip trunk
+                            if (lx == 0 && ly > -2) continue;
+                            
+                            Tile existingTile = getTile(worldX + lx, leafY + ly);
+                            if (existingTile.type == 0) {
+                                Tile leafTile;
+                                leafTile.type = 9; // Leaves
+                                leafTile.solid = false; // Non-solid so player can walk through
+                                leafTile.visible = true;
+                                setTile(worldX + lx, leafY + ly, leafTile);
+                            }
+                        }
+                    }
+                    
+                    break; // Only one tree per column
+                }
+            }
+        }
+    }
 }
 
 void World::draw(sf::RenderWindow& window, const sf::Vector2f& playerPosition) {
@@ -141,10 +217,11 @@ void World::draw(sf::RenderWindow& window, const sf::Vector2f& playerPosition) {
                         quad[2].position = sf::Vector2f((x + 1) * TILE_SIZE, (y + 1) * TILE_SIZE) + chunkPosition;
                         quad[3].position = sf::Vector2f(x * TILE_SIZE, (y + 1) * TILE_SIZE) + chunkPosition;
                         
-                        quad[0].texCoords = sf::Vector2f(0, 0);
-                        quad[1].texCoords = sf::Vector2f(16, 0);
-                        quad[2].texCoords = sf::Vector2f(16, 16);
-                        quad[3].texCoords = sf::Vector2f(0, 16);
+                        // Use first tile from atlas with small inset to avoid transparent borders
+                        quad[0].texCoords = sf::Vector2f(0.5f, 0.5f);
+                        quad[1].texCoords = sf::Vector2f(15.5f, 0.5f);
+                        quad[2].texCoords = sf::Vector2f(15.5f, 15.5f);
+                        quad[3].texCoords = sf::Vector2f(0.5f, 15.5f);
                         
                         quad[0].color = sf::Color::White;
                         quad[1].color = sf::Color::White;
@@ -152,13 +229,13 @@ void World::draw(sf::RenderWindow& window, const sf::Vector2f& playerPosition) {
                         quad[3].color = sf::Color::White;
                         
                         if (tile.type == 1) {
-                            // Dirt - use dirt texture
+                            // Dirt - use dirt texture atlas
                             dirtVertices.append(quad[0]);
                             dirtVertices.append(quad[1]);
                             dirtVertices.append(quad[2]);
                             dirtVertices.append(quad[3]);
                         } else if (tile.type == 3) {
-                            // Stone - use stone texture
+                            // Stone - use stone texture atlas
                             stoneVertices.append(quad[0]);
                             stoneVertices.append(quad[1]);
                             stoneVertices.append(quad[2]);
@@ -190,6 +267,18 @@ void World::draw(sf::RenderWindow& window, const sf::Vector2f& playerPosition) {
                                 quad[1].color = sf::Color(0, 191, 255);
                                 quad[2].color = sf::Color(0, 191, 255);
                                 quad[3].color = sf::Color(0, 191, 255);
+                            } else if (tile.type == 8) {
+                                // Wood - brown
+                                quad[0].color = sf::Color(139, 69, 19);
+                                quad[1].color = sf::Color(139, 69, 19);
+                                quad[2].color = sf::Color(139, 69, 19);
+                                quad[3].color = sf::Color(139, 69, 19);
+                            } else if (tile.type == 9) {
+                                // Leaves - dark green
+                                quad[0].color = sf::Color(34, 139, 34, 180);
+                                quad[1].color = sf::Color(34, 139, 34, 180);
+                                quad[2].color = sf::Color(34, 139, 34, 180);
+                                quad[3].color = sf::Color(34, 139, 34, 180);
                             }
                             otherVertices.append(quad[0]);
                             otherVertices.append(quad[1]);
@@ -281,12 +370,20 @@ void World::updateChunks(int playerChunkX, int playerChunkY) {
     // Generate chunks around player
     int renderDistance = CHUNKS_RENDERED / 2;
     
+    std::vector<std::pair<int, int>> newChunks;
+    
     for (int y = playerChunkY - renderDistance; y <= playerChunkY + renderDistance; ++y) {
         for (int x = playerChunkX - renderDistance; x <= playerChunkX + renderDistance; ++x) {
             if (!chunkExists(x, y)) {
                 generateChunk(x, y);
+                newChunks.push_back({x, y});
             }
         }
+    }
+    
+    // Generate trees for newly created chunks
+    for (const auto& chunkPos : newChunks) {
+        generateTrees(chunkPos.first, chunkPos.second);
     }
     
     // Unload distant chunks to save memory

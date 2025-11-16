@@ -23,7 +23,7 @@ private:
     bool onGround;
     
     void handleInput();
-    void checkCollisions(const World& world);
+    bool checkCollisions(const World& world);
 };
 
 #endif // PLAYER_H

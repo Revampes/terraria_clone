@@ -15,16 +15,36 @@ Player::~Player() {}
 void Player::update(const World& world, float deltaTime) {
     handleInput();
     
-    // Apply gravity
-    velocity.y += PLAYER_GRAVITY;
+    // Apply gravity only if not on ground
+    if (!onGround) {
+        velocity.y += PLAYER_GRAVITY;
+    } else {
+        // When on ground, zero out downward velocity
+        if (velocity.y > 0) {
+            velocity.y = 0;
+        }
+    }
+    
+    // Clamp very small velocities to zero to prevent floating-point drift
+    if (std::abs(velocity.x) < 0.01f) velocity.x = 0;
+    if (std::abs(velocity.y) < 0.01f && onGround) velocity.y = 0;
+    
+    // Store old position for collision response
+    sf::Vector2f oldPosition = position;
     
     // Update horizontal position
     position.x += velocity.x;
-    checkCollisions(world);
+    if (checkCollisions(world)) {
+        position.x = oldPosition.x; // Revert if collision
+        velocity.x = 0;
+    }
     
     // Update vertical position
     position.y += velocity.y;
-    checkCollisions(world);
+    if (checkCollisions(world)) {
+        position.y = oldPosition.y; // Revert if collision
+        velocity.y = 0;
+    }
     
     // Update shape position
     shape.setPosition(position);
@@ -61,7 +81,7 @@ void Player::handleInput() {
     }
 }
 
-void Player::checkCollisions(const World& world) {
+bool Player::checkCollisions(const World& world) {
     // Check collisions with tiles - use floor division for negative coordinates
     int playerLeft = static_cast<int>(std::floor(position.x / TILE_SIZE));
     int playerRight = static_cast<int>(std::floor((position.x + PLAYER_WIDTH - 1) / TILE_SIZE));
@@ -69,7 +89,10 @@ void Player::checkCollisions(const World& world) {
     int playerBottom = static_cast<int>(std::floor((position.y + PLAYER_HEIGHT - 1) / TILE_SIZE));
     
     // Reset ground state
+    bool wasOnGround = onGround;
     onGround = false;
+    
+    bool hasCollision = false;
     
     for (int y = playerTop; y <= playerBottom; ++y) {
         for (int x = playerLeft; x <= playerRight; ++x) {
@@ -80,38 +103,19 @@ void Player::checkCollisions(const World& world) {
                 sf::FloatRect tileBounds(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
                 
                 if (playerBounds.intersects(tileBounds)) {
-                    // Calculate overlap on each axis
-                    float overlapLeft = playerBounds.left + playerBounds.width - tileBounds.left;
-                    float overlapRight = tileBounds.left + tileBounds.width - playerBounds.left;
-                    float overlapTop = playerBounds.top + playerBounds.height - tileBounds.top;
-                    float overlapBottom = tileBounds.top + tileBounds.height - playerBounds.top;
+                    hasCollision = true;
                     
-                    // Find minimum overlap
-                    float minOverlapX = std::min(overlapLeft, overlapRight);
-                    float minOverlapY = std::min(overlapTop, overlapBottom);
+                    // Check if standing on top of this tile
+                    float playerBottom = position.y + PLAYER_HEIGHT;
+                    float tileTop = y * TILE_SIZE;
                     
-                    // Resolve collision on the axis with smallest overlap
-                    if (minOverlapX < minOverlapY) {
-                        // Horizontal collision
-                        if (overlapLeft < overlapRight) {
-                            position.x -= overlapLeft;
-                        } else {
-                            position.x += overlapRight;
-                        }
-                        velocity.x = 0;
-                    } else {
-                        // Vertical collision
-                        if (overlapTop < overlapBottom) {
-                            position.y -= overlapTop;
-                            velocity.y = 0;
-                            onGround = true;
-                        } else {
-                            position.y += overlapBottom;
-                            velocity.y = 0;
-                        }
+                    if (playerBottom > tileTop && playerBottom < tileTop + TILE_SIZE / 2) {
+                        onGround = true;
                     }
                 }
             }
         }
     }
+    
+    return hasCollision;
 }
