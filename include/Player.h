@@ -4,6 +4,7 @@
 #include <SFML/Graphics.hpp>
 #include "World.h"
 #include "Constants.h"
+#include "PlayerRenderer.h"
 
 class Player {
 public:
@@ -21,6 +22,11 @@ private:
     sf::Vector2f velocity;
     sf::RectangleShape shape;
     bool onGround;
+    bool movingRight;
+    float lastDeltaTime;
+    
+    PlayerSkin skin;
+    PlayerAnimation animation;
     
     void handleInput();
     bool checkCollisions(const World& world);

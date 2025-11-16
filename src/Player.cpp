@@ -8,12 +8,30 @@ Player::Player() {
     position = sf::Vector2f(0, 0);
     velocity = sf::Vector2f(0, 0);
     onGround = false;
+    movingRight = true;
+    lastDeltaTime = 0.0f;
+    
+    // Initialize player skin with default values
+    skin.hairType = 0;
+    
+    // Load player renderer resources
+    PlayerRenderer::loadAll();
 }
 
 Player::~Player() {}
 
 void Player::update(const World& world, float deltaTime) {
+    lastDeltaTime = deltaTime;
     handleInput();
+    
+    // Update animation state
+    animation.grounded = onGround;
+    if (std::abs(velocity.x) > 0.1f && onGround) {
+        animation.state = PlayerAnimation::running;
+    } else {
+        animation.state = PlayerAnimation::stay;
+    }
+    animation.update(lastDeltaTime);
     
     // Apply gravity only if not on ground
     if (!onGround) {
@@ -51,7 +69,11 @@ void Player::update(const World& world, float deltaTime) {
 }
 
 void Player::draw(sf::RenderWindow& window) {
-    window.draw(shape);
+    // Use the player renderer instead of simple rectangle
+    PlayerRenderer::render(window, position, skin, movingRight, animation, 1.0f);
+    
+    // Optionally draw the collision box for debugging
+    // window.draw(shape);
 }
 
 sf::Vector2f Player::getPosition() const {
@@ -68,8 +90,10 @@ void Player::handleInput() {
     // Horizontal movement
     if (sf::Keyboard::isKeyPressed(sf::Keyboard::A)) {
         velocity.x = -PLAYER_SPEED;
+        movingRight = false;
     } else if (sf::Keyboard::isKeyPressed(sf::Keyboard::D)) {
         velocity.x = PLAYER_SPEED;
+        movingRight = true;
     } else {
         velocity.x = 0;
     }
