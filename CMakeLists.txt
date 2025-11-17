@@ -15,6 +15,8 @@ set(SOURCES
     src/Player.cpp
     src/PerlinNoise.cpp
     src/PlayerRenderer.cpp
+    src/Items.cpp
+    src/Inventory.cpp
 )
 
 # Add header files
@@ -25,6 +27,8 @@ set(HEADERS
     include/PerlinNoise.h
     include/Constants.h
     include/PlayerRenderer.h
+    include/Items.h
+    include/Inventory.h
 )
 
 # Create executable

@@ -12,7 +12,7 @@ constexpr float TIME_STEP = 1.0f / GAME_SPEED;
 
 // Tile constants
 constexpr int TILE_SIZE = 16;
-constexpr int TILE_TYPES = 10;
+constexpr int TILE_TYPES = 11;
 
 // Chunk constants
 constexpr int CHUNK_WIDTH = 32;

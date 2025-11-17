@@ -298,6 +298,11 @@ void World::draw(sf::RenderWindow& window, const sf::Vector2f& playerPosition) {
                             quad[1].color = sf::Color(34, 139, 34, 180);
                             quad[2].color = sf::Color(34, 139, 34, 180);
                             quad[3].color = sf::Color(34, 139, 34, 180);
+                        } else if (tile.type == 10) {
+                            quad[0].color = sf::Color(205, 170, 125);
+                            quad[1].color = sf::Color(205, 170, 125);
+                            quad[2].color = sf::Color(205, 170, 125);
+                            quad[3].color = sf::Color(205, 170, 125);
                         }
                         otherVertices.append(quad[0]);
                         otherVertices.append(quad[1]);
@@ -350,7 +355,12 @@ void World::setTile(int x, int y, Tile tile) {
         return;
     }
 
+    bool explored = !chunk->tiles[tileX][tileY].fogEnabled;
     chunk->tiles[tileX][tileY] = tile;
+    if (explored) {
+        chunk->tiles[tileX][tileY].fogEnabled = false;
+        chunk->tiles[tileX][tileY].visible = true;
+    }
     refreshVisibilityAround(x, y);
 }
 
@@ -512,7 +522,16 @@ bool World::locateTileMutable(int worldX, int worldY, Chunk*& chunkOut, int& til
 }
 
 bool World::isAirTile(int worldX, int worldY) const {
-    return getTile(worldX, worldY).type == 0;
+    int chunkX, chunkY, tileX, tileY;
+    computeChunkCoords(worldX, worldY, chunkX, chunkY, tileX, tileY);
+
+    for (const Chunk& chunk : chunks) {
+        if (chunk.x == chunkX && chunk.y == chunkY) {
+            return chunk.tiles[tileX][tileY].type == 0;
+        }
+    }
+
+    return false;
 }
 
 bool World::shouldTileBeVisible(int worldX, int worldY, const Tile& tile) const {
@@ -539,7 +558,11 @@ void World::recalcChunkVisibility(Chunk& chunk) {
             int worldX = chunk.x * CHUNK_WIDTH + x;
             int worldY = chunk.y * CHUNK_HEIGHT + y;
             Tile& tile = chunk.tiles[x][y];
-            tile.visible = shouldTileBeVisible(worldX, worldY, tile);
+            bool newVisible = shouldTileBeVisible(worldX, worldY, tile);
+            if (newVisible && tile.fogEnabled) {
+                tile.fogEnabled = false;
+            }
+            tile.visible = newVisible || !tile.fogEnabled;
         }
     }
 }
@@ -560,7 +583,11 @@ void World::refreshVisibilityAround(int worldX, int worldY) {
         }
 
         Tile& tile = chunk->tiles[tileX][tileY];
-        tile.visible = shouldTileBeVisible(nx, ny, tile);
+        bool newVisible = shouldTileBeVisible(nx, ny, tile);
+        if (newVisible && tile.fogEnabled) {
+            tile.fogEnabled = false;
+        }
+        tile.visible = newVisible || !tile.fogEnabled;
 
         if (std::find(dirtyChunks.begin(), dirtyChunks.end(), chunk) == dirtyChunks.end()) {
             dirtyChunks.push_back(chunk);

@@ -24,6 +24,9 @@ g++ -std=c++17 `
     src/World.cpp `
     src/Player.cpp `
     src/PerlinNoise.cpp `
+    src/PlayerRenderer.cpp `
+    src/Items.cpp `
+    src/Inventory.cpp `
     -o build/terraria_clone.exe `
     -Iinclude `
     -lsfml-graphics `
